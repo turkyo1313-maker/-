@@ -1,79 +1,55 @@
-import os
 import subprocess
 import json
 from datetime import datetime
 
 def fetch_videos(search_query, count):
-    try:
-        command = ["yt-dlp", f"ytsearch{count}:{search_query}", "--dump-json", "--flat-playlist"]
-        result = subprocess.run(command, capture_output=True, text=True, check=True)
-        videos = []
-        for line in result.stdout.strip().split('\n'):
-            if line:
-                data = json.loads(line)
-                raw_date = data.get('upload_date', '00000000')
-                formatted_date = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:]}"
-                videos.append({
-                    'title': data.get('title'),
-                    'videoId': data.get('id'),
-                    'channelTitle': data.get('uploader'),
-                    'viewCount': data.get('view_count', 0),
-                    'likeCount': data.get('like_count', 0),
-                    'commentCount': data.get('comment_count', 0),
-                    'uploadDate': formatted_date
-                })
-        return videos
-    except: return []
-
-def make_cards_html(videos, lang_label):
-    html = ""
-    for item in videos:
-        url = f"https://www.youtube.com/watch?v={item['videoId']}"
-        html += f"""
-            <div class="card">
-                <span class="badge">{lang_label}</span>
-                <div class="title">{item['title']}</div>
-                <div class="meta">📅 {item['uploadDate']} | 📺 {item['channelTitle']}</div>
-                <div class="stats">👍 {item['likeCount']:,} | 👁️ {item['viewCount']:,} | 💬 {item['commentCount']:,}</div>
-                <a class="link" href="{url}" target="_blank">👉 영상 보러가기</a>
-            </div>
-        """
-    return html
+    # --print-json으로 데이터 정밀 추출
+    command = ["yt-dlp", f"ytsearch{count}:{search_query}", "--dump-json", "--flat-playlist"]
+    result = subprocess.run(command, capture_output=True, text=True)
+    videos = []
+    for line in result.stdout.strip().split('\n'):
+        if line:
+            data = json.loads(line)
+            videos.append({
+                'title': data.get('title', '제목없음'),
+                'videoId': data.get('id'),
+                'channelTitle': data.get('uploader'),
+                'viewCount': data.get('view_count') or 0,
+                'likeCount': data.get('like_count') or 0,
+                'commentCount': data.get('comment_count') or 0,
+                'uploadDate': data.get('upload_date', '00000000')
+            })
+    return videos
 
 def update_dashboard():
-    kr, en = fetch_videos("Claude 3.5 Sonnet 활용법", 3), fetch_videos("Claude AI agent trends", 2)
-    new_data = f"<div class='week-section'><h2>📅 {datetime.now().strftime('%Y-%m-%d')} 업데이트</h2>" + make_cards_html(kr, "한국어") + make_cards_html(en, "English") + "</div>"
+    kr = fetch_videos("Claude 3.5 Sonnet 활용법 실전", 3)
+    en = fetch_videos("Claude AI agent trends 2026", 2)
     
-    # 기존 내용 읽기 (없으면 새로 생성)
+    date_str = datetime.now().strftime('%Y-%m-%d')
+    new_section = f"""
+    <details open style="margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 8px;">
+        <summary style="font-size: 1.2em; font-weight: bold; cursor: pointer;">📅 {date_str} 업데이트 (금주 트렌드)</summary>
+        {''.join([f"<div class='card'><b>{v['title']}</b><br>조회수: {v['viewCount']:,} | 좋아요: {v['likeCount']:,} | 댓글: {v['commentCount']:,} | <a href='https://youtube.com/watch?v={v['videoId']}' target='_blank'>링크</a></div>" for v in kr + en])}
+    </details>
+    """
+
     old_content = ""
     if os.path.exists('index.html'):
         with open('index.html', 'r', encoding='utf-8') as f:
             content = f.read()
-            # <div id='history'> 이후의 내용을 가져옴
-            if "<div id='history'>" in content:
-                old_content = content.split("<div id='history'>")[1].split("</div>")[0]
+            if "<!-- history -->" in content:
+                old_content = content.split("<!-- history -->")[1]
 
-    final_html = f"""<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body {{ font-family: sans-serif; padding: 20px; background: #f4f7f6; }}
-        .card {{ background: white; padding: 15px; margin: 10px 0; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
-        .week-section {{ border-bottom: 2px solid #ccc; margin-bottom: 30px; }}
-        .title {{ font-weight: bold; color: #1e40af; }}
-    </style>
-</head>
-<body>
-    <h1>🚀 Claude 트렌드 아카이브</h1>
-    <div id='history'>
-        {new_data}
-        {old_content}
-    </div>
-</body>
-</html>"""
     with open('index.html', 'w', encoding='utf-8') as f:
-        f.write(final_html)
+        f.write(f"""<!DOCTYPE html><html><body>
+<h1>🚀 Claude 트렌드 대시보드</h1>
+{new_section}
+<div id="history">
+    <h2>📂 지난 히스토리</h2>
+    <!-- history -->{old_content}
+</div>
+</body></html>""")
 
 if __name__ == "__main__":
+    import os
     update_dashboard()
